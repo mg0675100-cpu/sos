@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Kirby's Dream Snake</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #ffdeef;
+            touch-action: manipulation;
+            overflow: hidden;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+        canvas {
+            image-rendering: pixelated;
+            max-width: 100%;
+            height: auto;
+            border: 8px solid #ff8fab;
+            border-radius: 12px;
+            background: #fff;
+            box-shadow: 0 10px 25px rgba(216, 27, 96, 0.2);
+        }
+        .btn-control {
+            user-select: none;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4">
+
+    <div class="text-center mb-4">
+        <h1 class="text-4xl font-black text-[#d81b60] drop-shadow-sm">KIRBY SNAKE</h1>
+        <div class="flex justify-center gap-8 mt-2 text-xl font-bold text-[#ff4d94]">
+            <div>SCORE: <span id="score">0</span></div>
+            <div>HIGH: <span id="highScore">0</span></div>
+        </div>
+    </div>
+
+    <div class="relative group">
+        <canvas id="gameCanvas" width="400" height="400"></canvas>
+        
+        <!-- Game Over Overlay -->
+        <div id="overlay" class="hidden absolute inset-0 bg-pink-500/80 flex flex-col items-center justify-center rounded-lg backdrop-blur-sm transition-all">
+            <h2 class="text-white text-4xl font-bold mb-4">POYO!</h2>
+            <p class="text-white text-xl mb-6">Game Over!</p>
+            <button id="restartBtn" class="bg-white text-pink-500 px-8 py-3 rounded-full font-bold text-lg hover:scale-105 active:scale-95 transition-transform shadow-lg">
+                TRY AGAIN
+            </button>
+        </div>
+    </div>
+
+    <!-- Touch Controls -->
+    <div class="mt-8 grid grid-cols-3 gap-2 md:hidden">
+        <div class="col-start-2">
+            <button id="btnUp" class="btn-control w-16 h-16 bg-white rounded-xl shadow-md flex items-center justify-center active:bg-pink-100">
+                <svg width="24" height="24" fill="currentColor" class="text-pink-500"><path d="M12 4l-8 8h16l-8-8z"/></svg>
+            </button>
+        </div>
+        <div class="col-start-1 row-start-2">
+            <button id="btnLeft" class="btn-control w-16 h-16 bg-white rounded-xl shadow-md flex items-center justify-center active:bg-pink-100">
+                <svg width="24" height="24" fill="currentColor" class="text-pink-500"><path d="M4 12l8-8v16l-8-8z"/></svg>
+            </button>
+        </div>
+        <div class="col-start-2 row-start-2">
+            <button id="btnDown" class="btn-control w-16 h-16 bg-white rounded-xl shadow-md flex items-center justify-center active:bg-pink-100">
+                <svg width="24" height="24" fill="currentColor" class="text-pink-500"><path d="M12 20l-8-8h16l-8-8z"/></svg>
+            </button>
+        </div>
+        <div class="col-start-3 row-start-2">
+            <button id="btnRight" class="btn-control w-16 h-16 bg-white rounded-xl shadow-md flex items-center justify-center active:bg-pink-100">
+                <svg width="24" height="24" fill="currentColor" class="text-pink-500"><path d="M20 12l-8-8v16l8-8z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <p class="mt-6 text-[#d81b60] font-medium opacity-70 hidden md:block">Use ARROW KEYS to move Kirby</p>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreEl = document.getElementById('score');
+        const highScoreEl = document.getElementById('highScore');
+        const overlay = document.getElementById('overlay');
+        const restartBtn = document.getElementById('restartBtn');
+
+        const gridSize = 20;
+        const tileCount = canvas.width / gridSize;
+
+        let score = 0;
+        let highScore = localStorage.getItem('kirbySnakeHigh') || 0;
+        highScoreEl.innerText = highScore;
+
+        let kirby = [
+            { x: 10, y: 10 },
+            { x: 10, y: 11 },
+            { x: 10, y: 12 }
+        ];
+        
+        let food = { x: 5, y: 5 };
+        let dx = 0;
+        let dy = -1;
+        let nextDx = 0;
+        let nextDy = -1;
+        let gameRunning = true;
+        let gameLoop;
+
+        // Draw functions
+        function drawKirbyHead(x, y) {
+            const cx = x * gridSize + gridSize / 2;
+            const cy = y * gridSize + gridSize / 2;
+            const r = gridSize / 2 - 1;
+
+            // Pink Body
+            ctx.fillStyle = '#ffafcc';
+            ctx.beginPath();
+            ctx.arc(cx, cy, r, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Eyes (Elongated)
+            ctx.fillStyle = '#000';
+            const eyeWidth = 2;
+            const eyeHeight = 5;
+            ctx.fillRect(cx - 4, cy - 4, eyeWidth, eyeHeight);
+            ctx.fillRect(cx + 2, cy - 4, eyeWidth, eyeHeight);
+            
+            // Eye gleam (tiny white dots)
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(cx - 4, cy - 4, 1.5, 2);
+            ctx.fillRect(cx + 2, cy - 4, 1.5, 2);
+
+            // Blushes
+            ctx.fillStyle = '#ff8fab';
+            ctx.beginPath();
+            ctx.arc(cx - 6, cy + 2, 2.5, 0, Math.PI * 2);
+            ctx.arc(cx + 6, cy + 2, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mouth (Small smile)
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.arc(cx, cy + 3, 2, 0.2 * Math.PI, 0.8 * Math.PI);
+            ctx.stroke();
+        }
+
+        function drawBodyPart(x, y, index, total) {
+            const cx = x * gridSize + gridSize / 2;
+            const cy = y * gridSize + gridSize / 2;
+            // Taper the tail slightly
+            const sizeReduction = (index / total) * 3;
+            const r = (gridSize / 2 - 2) - sizeReduction;
+
+            ctx.fillStyle = '#ffc8dd';
+            ctx.beginPath();
+            ctx.arc(cx, cy, Math.max(r, 4), 0, Math.PI * 2);
+            ctx.fill();
+            
+            // Shine on body
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+            ctx.beginPath();
+            ctx.arc(cx - 2, cy - 2, r/3, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawStar(x, y) {
+            const cx = x * gridSize + gridSize / 2;
+            const cy = y * gridSize + gridSize / 2;
+            const spikes = 5;
+            const outerRadius = 8;
+            const innerRadius = 4;
+
+            ctx.fillStyle = '#ffea00';
+            ctx.shadowBlur = 10;
+            ctx.shadowColor = '#ffea00';
+            
+            let rot = Math.PI / 2 * 3;
+            let xPos = cx;
+            let yPos = cy;
+            let step = Math.PI / spikes;
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - outerRadius);
+            for (let i = 0; i < spikes; i++) {
+                xPos = cx + Math.cos(rot) * outerRadius;
+                yPos = cy + Math.sin(rot) * outerRadius;
+                ctx.lineTo(xPos, yPos);
+                rot += step;
+
+                xPos = cx + Math.cos(rot) * innerRadius;
+                yPos = cy + Math.sin(rot) * innerRadius;
+                ctx.lineTo(xPos, yPos);
+                rot += step;
+            }
+            ctx.lineTo(cx, cy - outerRadius);
+            ctx.closePath();
+            ctx.fill();
+            ctx.shadowBlur = 0; // Reset shadow
+        }
+
+        function update() {
+            if (!gameRunning) return;
+
+            dx = nextDx;
+            dy = nextDy;
+
+            const head = { x: kirby[0].x + dx, y: kirby[0].y + dy };
+
+            // Wall Collision
+            if (head.x < 0 || head.x >= tileCount || head.y < 0 || head.y >= tileCount) {
+                gameOver();
+                return;
+            }
+
+            // Self Collision
+            for (let i = 0; i < kirby.length; i++) {
+                if (kirby[i].x === head.x && kirby[i].y === head.y) {
+                    gameOver();
+                    return;
+                }
+            }
+
+            kirby.unshift(head);
+
+            // Food Collision
+            if (head.x === food.x && head.y === food.y) {
+                score += 10;
+                scoreEl.innerText = score;
+                if (score > highScore) {
+                    highScore = score;
+                    highScoreEl.innerText = highScore;
+                    localStorage.setItem('kirbySnakeHigh', highScore);
+                }
+                spawnFood();
+            } else {
+                kirby.pop();
+            }
+
+            draw();
+        }
+
+        function draw() {
+            // Background
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Grid (optional, very subtle)
+            ctx.strokeStyle = '#fff0f6';
+            ctx.lineWidth = 1;
+            for(let i=0; i<tileCount; i++) {
+                ctx.beginPath(); ctx.moveTo(i*gridSize, 0); ctx.lineTo(i*gridSize, canvas.height); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i*gridSize); ctx.lineTo(canvas.width, i*gridSize); ctx.stroke();
+            }
+
+            drawStar(food.x, food.y);
+
+            // Draw Body (backward so head is on top)
+            for (let i = kirby.length - 1; i >= 1; i--) {
+                drawBodyPart(kirby[i].x, kirby[i].y, i, kirby.length);
+            }
+            
+            // Draw Head
+            drawKirbyHead(kirby[0].x, kirby[0].y);
+        }
+
+        function spawnFood() {
+            food = {
+                x: Math.floor(Math.random() * tileCount),
+                y: Math.floor(Math.random() * tileCount)
+            };
+            // Ensure food doesn't spawn on Kirby
+            for (let part of kirby) {
+                if (part.x === food.x && part.y === food.y) {
+                    spawnFood();
+                    break;
+                }
+            }
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            clearInterval(gameLoop);
+            overlay.classList.remove('hidden');
+        }
+
+        function resetGame() {
+            score = 0;
+            scoreEl.innerText = '0';
+            kirby = [
+                { x: 10, y: 10 },
+                { x: 10, y: 11 },
+                { x: 10, y: 12 }
+            ];
+            dx = 0;
+            dy = -1;
+            nextDx = 0;
+            nextDy = -1;
+            gameRunning = true;
+            overlay.classList.add('hidden');
+            spawnFood();
+            if(gameLoop) clearInterval(gameLoop);
+            gameLoop = setInterval(update, 120);
+        }
+
+        // Input Handling
+        function handleInput(dir) {
+            if (!gameRunning) return;
+            switch(dir) {
+                case 'UP': if (dy !== 1) { nextDx = 0; nextDy = -1; } break;
+                case 'DOWN': if (dy !== -1) { nextDx = 0; nextDy = 1; } break;
+                case 'LEFT': if (dx !== 1) { nextDx = -1; nextDy = 0; } break;
+                case 'RIGHT': if (dx !== -1) { nextDx = 1; nextDy = 0; } break;
+            }
+        }
+
+        window.addEventListener('keydown', e => {
+            if (e.key === 'ArrowUp') handleInput('UP');
+            if (e.key === 'ArrowDown') handleInput('DOWN');
+            if (e.key === 'ArrowLeft') handleInput('LEFT');
+            if (e.key === 'ArrowRight') handleInput('RIGHT');
+        });
+
+        // Button events
+        document.getElementById('btnUp').onclick = () => handleInput('UP');
+        document.getElementById('btnDown').onclick = () => handleInput('DOWN');
+        document.getElementById('btnLeft').onclick = () => handleInput('LEFT');
+        document.getElementById('btnRight').onclick = () => handleInput('RIGHT');
+        restartBtn.onclick = resetGame;
+
+        // Start
+        resetGame();
+
+    </script>
+</body>
+</html>
